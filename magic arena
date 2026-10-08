@@ -1,0 +1,404 @@
+-- [[ Gbao Hub VIP - Version 8.1 (Removed Auto Respawn) ]] --
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local LocalPlayer = Players.LocalPlayer
+
+-- Biến Trạng Thái & Thống Kê
+local Config = {
+    FarmKill = false,
+    AutoDiamond = false,
+    OrbitPlayer = false,
+    HitboxAo = false,
+    HitboxSize = 50, -- Kích thước mặc định
+    AutoAttack = false,
+    AutoSpell = false
+}
+
+local Stats = {
+    Kills = 0,
+    TotalDamage = 0
+}
+
+local OriginalSizes = {}
+local HitboxOutlines = {}
+local TrackedHealth = {}
+local LastAttackedTarget = nil
+local LastAttackTime = 0
+
+-- 1. TẠO GIAO DIỆN CHÍNH (MAIN UI)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GbaoHubVIP_v8_1"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Nút Nổi (Toggle Button)
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Name = "ToggleButton"
+ToggleBtn.Parent = ScreenGui
+ToggleBtn.Size = UDim2.new(0, 60, 0, 60)
+ToggleBtn.Position = UDim2.new(0.05, 0, 0.2, 0)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(255, 45, 85)
+ToggleBtn.Text = "Gbao"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 18
+ToggleBtn.Font = Enum.Font.SourceSansBold
+ToggleBtn.Active = true
+ToggleBtn.Draggable = true
+
+local BtnCorner = Instance.new("UICorner")
+BtnCorner.CornerRadius = UDim.new(1, 0)
+BtnCorner.Parent = ToggleBtn
+
+-- Khung Menu Chính
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.Size = UDim2.new(0, 270, 0, 470)
+MainFrame.Position = UDim2.new(0.5, -135, 0.5, -235)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+MainFrame.Visible = true
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 12)
+MainCorner.Parent = MainFrame
+
+-- Tiêu đề Menu
+local Title = Instance.new("TextLabel")
+Title.Parent = MainFrame
+Title.Size = UDim2.new(1, 0, 0, 45)
+Title.Text = "👑 Gbao Hub VIP v8.1 👑"
+Title.TextColor3 = Color3.fromRGB(255, 215, 0)
+Title.TextSize = 20
+Title.Font = Enum.Font.SourceSansBold
+Title.BackgroundTransparency = 1
+
+-- 2. TẠO BẢNG THỐNG KÊ KILL / DAME CỦA BẢN THÂN
+local StatFrame = Instance.new("Frame")
+StatFrame.Name = "StatFrame"
+StatFrame.Parent = ScreenGui
+StatFrame.Size = UDim2.new(0, 210, 0, 45)
+StatFrame.Position = UDim2.new(0.5, -105, 0.02, 0)
+StatFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+StatFrame.Active = true
+StatFrame.Draggable = true
+
+local StatCorner = Instance.new("UICorner")
+StatCorner.CornerRadius = UDim.new(0, 8)
+StatCorner.Parent = StatFrame
+
+local StatStroke = Instance.new("UIStroke")
+StatStroke.Parent = StatFrame
+StatStroke.Color = Color3.fromRGB(255, 0, 0)
+StatStroke.Thickness = 2
+
+local StatLabel = Instance.new("TextLabel")
+StatLabel.Parent = StatFrame
+StatLabel.Size = UDim2.new(1, 0, 1, 0)
+StatLabel.BackgroundTransparency = 1
+StatLabel.Text = "Kills: 0  |  Dame: 0"
+StatLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+StatLabel.TextSize = 15
+StatLabel.Font = Enum.Font.SourceSansBold
+
+local function UpdateStats()
+    StatLabel.Text = "Kills: " .. tostring(Stats.Kills) .. "  |  Dame: " .. tostring(math.floor(Stats.TotalDamage))
+end
+
+-- Hàm Tạo Nút Bật/Tắt
+local function CreateToggleButton(text, pos, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Parent = MainFrame
+    Btn.Size = UDim2.new(0.85, 0, 0, 36)
+    Btn.Position = pos
+    Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+    Btn.Text = text .. ": OFF"
+    Btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    Btn.TextSize = 13
+    Btn.Font = Enum.Font.SourceSans
+    
+    local Corner = Instance.new("UICorner")
+    Corner.CornerRadius = UDim.new(0, 8)
+    Corner.Parent = Btn
+
+    local state = false
+    Btn.MouseButton1Click:Connect(function()
+        state = not state
+        if state then
+            Btn.BackgroundColor3 = Color3.fromRGB(0, 170, 127)
+            Btn.Text = text .. ": ON"
+            Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        else
+            Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 60)
+            Btn.Text = text .. ": OFF"
+            Btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+        end
+        callback(state)
+    end)
+    return Btn
+end
+
+-- Tạo các nút chức năng
+CreateToggleButton("Farm Kill", UDim2.new(0.075, 0, 0.11, 0), function(val) Config.FarmKill = val end)
+CreateToggleButton("Bay Quanh Người Sống", UDim2.new(0.075, 0, 0.21, 0), function(val) Config.OrbitPlayer = val end)
+CreateToggleButton("Hitbox Trắng Viền Đen", UDim2.new(0.075, 0, 0.31, 0), function(val) Config.HitboxAo = val end)
+
+-- 3. NÚT ĐIỀU CHỈNH KÍCH THƯỚC HITBOX (1 - 150 STUDS)
+local SizeLabel = Instance.new("TextLabel")
+SizeLabel.Parent = MainFrame
+SizeLabel.Size = UDim2.new(0.85, 0, 0, 20)
+SizeLabel.Position = UDim2.new(0.075, 0, 0.40, 0)
+SizeLabel.Text = "Kích Thước Hitbox: " .. tostring(Config.HitboxSize) .. " studs"
+SizeLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+SizeLabel.TextSize = 13
+SizeLabel.Font = Enum.Font.SourceSans
+SizeLabel.BackgroundTransparency = 1
+
+local SizeMinus = Instance.new("TextButton")
+SizeMinus.Parent = MainFrame
+SizeMinus.Size = UDim2.new(0.4, 0, 0, 30)
+SizeMinus.Position = UDim2.new(0.075, 0, 0.45, 0)
+SizeMinus.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+SizeMinus.Text = "- 10"
+SizeMinus.TextColor3 = Color3.fromRGB(255, 255, 255)
+SizeMinus.TextSize = 14
+SizeMinus.Font = Enum.Font.SourceSansBold
+
+local SizePlus = Instance.new("TextButton")
+SizePlus.Parent = MainFrame
+SizePlus.Size = UDim2.new(0.4, 0, 0, 30)
+SizePlus.Position = UDim2.new(0.525, 0, 0.45, 0)
+SizePlus.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
+SizePlus.Text = "+ 10"
+SizePlus.TextColor3 = Color3.fromRGB(255, 255, 255)
+SizePlus.TextSize = 14
+SizePlus.Font = Enum.Font.SourceSansBold
+
+SizeMinus.MouseButton1Click:Connect(function()
+    Config.HitboxSize = math.clamp(Config.HitboxSize - 10, 1, 150)
+    SizeLabel.Text = "Kích Thước Hitbox: " .. tostring(Config.HitboxSize) .. " studs"
+end)
+
+SizePlus.MouseButton1Click:Connect(function()
+    Config.HitboxSize = math.clamp(Config.HitboxSize + 10, 1, 150)
+    SizeLabel.Text = "Kích Thước Hitbox: " .. tostring(Config.HitboxSize) .. " studs"
+end)
+
+CreateToggleButton("Tự Động Đánh & Skill", UDim2.new(0.075, 0, 0.54, 0), function(val) Config.AutoAttack = val end)
+CreateToggleButton("Tự Trang Bị Phép Thuật", UDim2.new(0.075, 0, 0.64, 0), function(val) Config.AutoSpell = val end)
+CreateToggleButton("Auto Mặt Kim Cương", UDim2.new(0.075, 0, 0.74, 0), function(val) Config.AutoDiamond = val end)
+
+-- Nút Ẩn/Hiện Menu
+ToggleBtn.MouseButton1Click:Connect(function()
+    MainFrame.Visible = not MainFrame.Visible
+end)
+
+
+-- 4. HÀM TÌM MỤC TIÊU SỐNG GẦN NHẤT
+local function GetClosestTarget()
+    local closestPlayer = nil
+    local shortestDistance = math.huge
+
+    for _, v in pairs(Players:GetPlayers()) do
+        if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character:FindFirstChild("HumanoidRootPart") then
+            if v.Character.Humanoid.Health > 0 then
+                local dist = (v.Character.HumanoidRootPart.Position - LocalPlayer.Character.HumanoidRootPart.Position).Magnitude
+                if dist < shortestDistance then
+                    shortestDistance = dist
+                    closestPlayer = v
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+
+-- 5. HÀM TỰ ĐỘNG ĐÁNH VÀ LƯU VẾT CÔNG KÍCH BẢN THÂN
+local function DoAttack()
+    if LocalPlayer.Character then
+        local tool = LocalPlayer.Character:FindFirstChildOfClass("Tool")
+        if not tool then
+            local backpackTool = LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
+            if backpackTool and LocalPlayer.Character:FindFirstChild("Humanoid") then
+                LocalPlayer.Character.Humanoid:EquipTool(backpackTool)
+            end
+        else
+            tool:Activate()
+        end
+        
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Z, false, game)
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.X, false, game)
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.C, false, game)
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.V, false, game)
+        
+        local target = GetClosestTarget()
+        if target then
+            LastAttackedTarget = target
+            LastAttackTime = tick()
+        end
+    end
+end
+
+
+-- 6. TÍNH CHÍNH XÁC KILL & DAME CỦA BẢN THÂN
+task.spawn(function()
+    while task.wait(0.1) do
+        for _, v in pairs(Players:GetPlayers()) do
+            if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("Humanoid") and v.Character:FindFirstChild("HumanoidRootPart") then
+                local hum = v.Character.Humanoid
+                local hrp = v.Character.HumanoidRootPart
+                local lastHealth = TrackedHealth[v] or hum.Health
+                
+                local myHRP = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                local isNearby = myHRP and (myHRP.Position - hrp.Position).Magnitude <= (Config.HitboxSize + 15)
+                local isMyTarget = (LastAttackedTarget == v and (tick() - LastAttackTime) < 1.5)
+                
+                if (isNearby or isMyTarget) and hum.Health < lastHealth then
+                    local damageDealt = lastHealth - hum.Health
+                    Stats.TotalDamage = Stats.TotalDamage + damageDealt
+                    
+                    if hum.Health <= 0 and lastHealth > 0 then
+                        Stats.Kills = Stats.Kills + 1
+                    end
+                    UpdateStats()
+                end
+                TrackedHealth[v] = hum.Health
+            end
+        end
+    end
+end)
+
+
+-- 7. LUỒNG TỰ ĐỘNG ĐÁNH
+task.spawn(function()
+    while task.wait(0.05) do
+        if Config.AutoAttack or Config.FarmKill or Config.OrbitPlayer then
+            DoAttack()
+        end
+    end
+end)
+
+
+-- 8. CHỨC NĂNG HITBOX TỐI ƯU CHỐNG LAG
+task.spawn(function()
+    while task.wait(0.2) do
+        for _, v in pairs(Players:GetPlayers()) do
+            if v ~= LocalPlayer and v.Character and v.Character:FindFirstChild("HumanoidRootPart") then
+                local hrp = v.Character.HumanoidRootPart
+                if Config.HitboxAo then
+                    if not OriginalSizes[v] then
+                        OriginalSizes[v] = hrp.Size
+                    end
+                    
+                    local currentSize = Vector3.new(Config.HitboxSize, Config.HitboxSize, Config.HitboxSize)
+                    if hrp.Size ~= currentSize then
+                        hrp.Size = currentSize
+                        hrp.Transparency = 0.85
+                        hrp.BrickColor = BrickColor.new("White")
+                        hrp.Material = Enum.Material.Neon
+                        hrp.CanCollide = false
+                    end
+                    
+                    if not HitboxOutlines[v] or HitboxOutlines[v].Parent ~= hrp then
+                        if HitboxOutlines[v] then HitboxOutlines[v]:Destroy() end
+                        local box = Instance.new("SelectionBox")
+                        box.Name = "GbaoOutline"
+                        box.Color3 = Color3.fromRGB(0, 0, 0)
+                        box.LineThickness = 0.1
+                        box.Adornee = hrp
+                        box.Parent = hrp
+                        HitboxOutlines[v] = box
+                    end
+                else
+                    if OriginalSizes[v] and hrp.Size ~= OriginalSizes[v] then
+                        hrp.Size = OriginalSizes[v]
+                        hrp.Transparency = 1
+                        hrp.CanCollide = true
+                    end
+                    if HitboxOutlines[v] then
+                        HitboxOutlines[v]:Destroy()
+                        HitboxOutlines[v] = nil
+                    end
+                end
+            end
+        end
+    end
+end)
+
+
+-- 9. TỰ ĐỘNG TRANG BỊ LẠI PHÉP THUẬT KHI HỒI SINH (KHÔNG TỰ HỒI SINH TỰ ĐỘNG)
+LocalPlayer.CharacterAdded:Connect(function(char)
+    if Config.AutoSpell then
+        task.wait(0.5)
+        local hum = char:WaitForChild("Humanoid", 5)
+        if hum then
+            local spellTool = LocalPlayer.Backpack:FindFirstChildOfClass("Tool")
+            if spellTool then
+                hum:EquipTool(spellTool)
+            end
+        end
+    end
+end)
+
+
+-- 10. CHỨC NĂNG FARM KILL
+RunService.Stepped:Connect(function()
+    if Config.FarmKill and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local target = GetClosestTarget()
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local targetHRP = target.Character.HumanoidRootPart
+            local myHRP = LocalPlayer.Character.HumanoidRootPart
+            
+            myHRP.CFrame = CFrame.new(targetHRP.Position + Vector3.new(0, 3.5, 0), targetHRP.Position)
+            myHRP.Velocity = Vector3.zero
+        end
+    end
+end)
+
+
+-- 11. CHỨC NĂNG BAY QUANH NGƯỜI CHƠI
+local orbitAngle = 0
+local orbitRadius = 4.5
+local orbitSpeed = 35
+
+RunService.Stepped:Connect(function(deltaTime)
+    if Config.OrbitPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local target = GetClosestTarget()
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") then
+            local targetHRP = target.Character.HumanoidRootPart
+            local myHRP = LocalPlayer.Character.HumanoidRootPart
+            
+            orbitAngle = orbitAngle + (deltaTime * orbitSpeed)
+            local offsetX = math.cos(orbitAngle) * orbitRadius
+            local offsetZ = math.sin(orbitAngle) * orbitRadius
+            local targetPos = targetHRP.Position + Vector3.new(offsetX, 1.5, offsetZ)
+            
+            myHRP.CFrame = CFrame.lookAt(targetPos, targetHRP.Position)
+            myHRP.Velocity = Vector3.zero
+        end
+    end
+end)
+
+
+-- 12. AUTO MẶT KIM CƯƠNG
+task.spawn(function()
+    while task.wait(0.2) do
+        if Config.AutoDiamond and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+            for _, obj in pairs(workspace:GetDescendants()) do
+                if (obj:IsA("TouchTransmitter") or obj:IsA("ProximityPrompt")) and (string.find(string.lower(obj.Parent.Name), "diamond") or string.find(string.lower(obj.Parent.Name), "kimcuong")) then
+                    if obj:IsA("TouchTransmitter") then
+                        firetouchinterest(LocalPlayer.Character.HumanoidRootPart, obj.Parent, 0)
+                        firetouchinterest(LocalPlayer.Character.HumanoidRootPart, obj.Parent, 1)
+                    elseif obj:IsA("ProximityPrompt") then
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = obj.Parent.CFrame
+                        fireproximityprompt(obj)
+                    end
+                end
+            end
+        end
+    end
+end)
